@@ -1,0 +1,104 @@
+Install-Package Microsoft.AspNet.WebApi.Owin
+Install-Package Microsoft.Owin.Host.SystemWeb
+Install-Package Microsoft.AspNet.Identity.Owin
+Install-Package Microsoft.Owin.Security.OAuth
+Install-Package Microsoft.Owin.Security.Coockies
+Install-Package Microsoft.Owin.Cors
+
+
+[assembly: OwinStartup(typeof(WebApi.Startup))]
+namespace WebApi
+{
+    public class Startup
+    {
+        public void Configuration(IAppBuilder app)
+        {
+            HttpConfiguration configuration = new HttpConfiguration();
+            ConfigureOAuth(app);
+            //WebApiConfig.Register(configuration);
+            GlobalConfiguration.Configure(WebApiConfig.Register);
+            app.UseWebApi(configuration);
+        }
+        public void ConfigureOAuth(IAppBuilder app)
+        {
+            OAuthAuthorizationServerOptions OAuthServerOptions = new OAuthAuthorizationServerOptions()
+            {
+                AllowInsecureHttp = true,
+                TokenEndpointPath = new PathString("/token"),
+                AccessTokenExpireTimeSpan = TimeSpan.FromDays(1),
+                Provider = new AuthorizationProvider()
+            };
+
+            // Token Generation
+            app.UseOAuthAuthorizationServer(OAuthServerOptions);
+            app.UseOAuthBearerAuthentication(new OAuthBearerAuthenticationOptions());
+
+        }
+    }
+
+ public class AuthorizationProvider:OAuthAuthorizationServerProvider
+    {
+
+
+        public override async Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
+        {
+            context.Validated();
+        }
+       
+
+        public override async Task GrantResourceOwnerCredentials(OAuthGrantResourceOwnerCredentialsContext context)
+        {
+            context.OwinContext.Response.Headers.Add("Access-Control-Allow-Origin", new[] { "*" });
+            if (context.UserName.Equals(ConfigurationManager.AppSettings.Get("Name")) && context.Password.Equals(ConfigurationManager.AppSettings.Get("Password")))
+            {
+                var identity = new ClaimsIdentity(context.Options.AuthenticationType);
+                identity.AddClaim(new Claim("username", context.UserName));
+                identity.AddClaim(new Claim("role", "admin"));
+                AuthenticationProperties properties = new AuthenticationProperties(new Dictionary<string, string> { 
+                {"role","admin"}
+                });
+                var ticket = new AuthenticationTicket(identity, properties);
+                context.Validated(ticket);
+            }
+               
+
+        }
+       
+    }
+
+
+ [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
+    public class ClaimsAuthorizeAttribute : AuthorizeAttribute
+    {
+        private string claimType;
+        private string claimValue;
+        public ClaimsAuthorizeAttribute(string type, string value)
+        {
+            this.claimType = type;
+            this.claimValue = value;
+        }
+
+        public override void OnAuthorization(HttpActionContext filterContext)
+        {
+            var user = HttpContext.Current.User as ClaimsPrincipal;
+            if (user.HasClaim(claimType, claimValue))
+            {
+                base.OnAuthorization(filterContext);
+            }
+            else
+            {
+                if (user.Identity.IsAuthenticated)
+                {
+                    filterContext.Response = new System.Net.Http.HttpResponseMessage(HttpStatusCode.Forbidden);
+                }
+                else
+                {
+                    base.HandleUnauthorizedRequest(filterContext);
+                }
+            }
+        }
+    }
+
+}
+
+
